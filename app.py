@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import gspread
 
 # Setting halaman web
 st.set_page_config(page_title="Stok Conwood", layout="wide")
@@ -7,11 +8,11 @@ st.set_page_config(page_title="Stok Conwood", layout="wide")
 # ID Google Sheets Lu
 SHEET_ID = "1SeTXDnQqcvqhuZ6rtX137tH_rd21OHYP76--bWyfUIk"
 
-# Link Direct CSV ke masing-masing Tab
+# Link Direct CSV
 URL_STOK = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Stok_Barang"
 URL_HISTORI = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Histori_Penjualan"
 
-@st.cache_data(ttl=5) # Auto refresh cache data tiap 5 detik
+@st.cache_data(ttl=3) # Refresh data tiap 3 detik
 def load_data():
     try:
         df_stok = pd.read_csv(URL_STOK)
@@ -41,9 +42,12 @@ if menu == "🔍 Katalog & Cari Stok":
     if not df_stok.empty:
         df = df_stok.copy()
         
-        # Format kolom numerik
+        # Bersihkan titik jika ada yang salah ketik di Sheets
+        df["Harga_Asli"] = df["Harga_Asli"].astype(str).str.replace('.', '', regex=False)
         df["Harga_Asli"] = pd.to_numeric(df["Harga_Asli"], errors='coerce').fillna(0)
         df["Diskon_Persen"] = pd.to_numeric(df["Diskon_Persen"], errors='coerce').fillna(0)
+        
+        # Hitung harga akhir
         df["Harga_Akhir"] = df["Harga_Asli"] - (df["Harga_Asli"] * df["Diskon_Persen"] / 100)
         
         keyword = st.text_input("🔍 Ketik nama produk, tebal, lebar, dll...", "")
@@ -74,7 +78,36 @@ if menu == "🔍 Katalog & Cari Stok":
 # ==========================================
 elif menu == "🛒 Transaksi & Restock":
     st.title("🛒 Transaksi & Restock Barang")
-    st.info("💡 Untuk mengedit stok / menambah transaksi baru, Anda dapat langsung mengeditnya dari Google Sheets.")
+    
+    if not df_stok.empty:
+        list_produk = df_stok["Nama_Produk"].dropna().tolist()
+        produk_dipilih = st.selectbox("Pilih / Ketik Nama Produk Conwood:", list_produk)
+        
+        detail_p = df_stok[df_stok["Nama_Produk"] == produk_dipilih].iloc[0]
+        stok_sekarang = int(detail_p["Stok"])
+        
+        harga_asli_str = str(detail_p["Harga_Asli"]).replace('.', '')
+        harga_asli = float(harga_asli_str)
+        diskon = float(detail_p["Diskon_Persen"])
+        harga_akhir = harga_asli - (harga_asli * diskon / 100)
+        
+        st.info(f"💡 **Sisa Stok:** {stok_sekarang} Pcs | **Harga Final per Pcs:** Rp {harga_akhir:,.0f}")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            qty = st.number_input("Jumlah (Qty Pcs):", min_value=1, max_value=stok_sekarang if stok_sekarang > 0 else 1, value=1)
+            tgl_beli = st.date_input("Tanggal Beli:")
+            tgl_kirim = st.date_input("Rencana Tanggal Kirim:")
+            
+        with col2:
+            nama_pembeli = st.text_input("Nama Pembeli:")
+            no_telp = st.text_input("No. Telepon HP:")
+            alamat = st.text_area("Alamat Pengiriman:")
+            
+        total_bayar = qty * harga_akhir
+        st.write(f"### 💵 Total Bayar: **Rp {total_bayar:,.0f}**")
+        
+        st.warning("👉 *Untuk update transaksi secara instan & aman, silakan catat detail penjualan di atas lalu masukkan ke sheet Histori_Penjualan di Google Sheets.*")
 
 # ==========================================
 # MENU 3: HISTORI & STATUS KIRIM
