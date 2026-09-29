@@ -14,17 +14,33 @@ SHEET_ID = "1SeTXDnQqcvqhuZ6rtX137tH_rd21OHYP76--bWyfUIk"
 URL_STOK = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Stok_Barang"
 URL_HISTORI = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Histori_Penjualan"
 
-# Fungsi Koneksi Write gspread via Secrets
+# Fungsi Koneksi Write gspread via Secrets (Fix Format Private Key)
 def get_gspread_client():
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive"
     ]
     if "gcp_service_account" in st.secrets:
-        creds = Credentials.from_service_account_info(
-            st.secrets["gcp_service_account"], scopes=scopes
-        )
-        return gspread.authorize(creds)
+        # Konversi st.secrets ke dictionary biasa
+        creds_dict = dict(st.secrets["gcp_service_account"])
+        
+        # Perbaiki format private_key
+        if "private_key" in creds_dict:
+            key = creds_dict["private_key"]
+            # Hilangkan tanda petik ganda/tunggal ekstra jika ada di awal/akhir
+            key = key.strip("'\"")
+            # Pastikan newline terkonversi dengan benar
+            key = key.replace("\\n", "\n")
+            creds_dict["private_key"] = key
+
+        try:
+            creds = Credentials.from_service_account_info(
+                creds_dict, scopes=scopes
+            )
+            return gspread.authorize(creds)
+        except Exception as e:
+            st.error(f"Gagal memuat kredensial Service Account: {e}")
+            return None
     return None
 
 @st.cache_data(ttl=2)
