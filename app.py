@@ -152,10 +152,24 @@ elif menu == "🛒 Transaksi & Restock":
                             stgl_beli = tgl_beli.strftime("%Y-%m-%d")
                             stgl_kirim = tgl_kirim.strftime("%Y-%m-%d")
                             
+                            # ID Transaksi Otomatis (contoh: TRX-20260929-4821)
+                            import random
+                            trx_id = f"TRX-{tgl_beli.strftime('%Y%m%d')}-{random.randint(1000, 9999)}"
+                            
+                            # SUSUNAN SESUAI TAHAPAN KAMU:
                             new_row = [
-                                stgl_beli, produk_dipilih, qty, harga_akhir,
-                                total_bayar, nama_pembeli, no_telp, alamat, stgl_kirim, "Pending"
+                                trx_id,          # 1. ID_Transaksi
+                                stgl_beli,       # 2. Tgl_Beli
+                                stgl_kirim,      # 3. Tgl_Kirim
+                                nama_pembeli,    # 4. Nama_Pembeli
+                                no_telp,         # 5. No_Telp
+                                alamat,          # 6. Alamat
+                                produk_dipilih,  # 7. Nama_Produk
+                                qty,             # 8. Qty
+                                total_bayar,     # 9. Total_Harga
+                                "Pending"        # 10. Status_Kirim
                             ]
+                            
                             ws_histori.append_row(new_row)
                             
                             # Update Stok di Google Sheets (Kolom H = Stok, index + 2)
@@ -164,12 +178,41 @@ elif menu == "🛒 Transaksi & Restock":
                             ws_stok.update_cell(row_number, 8, sisa_stok_baru)
                             
                             st.cache_data.clear()
-                            st.success("✅ Transaksi berhasil disimpan! Stok terupdate & data masuk ke Histori.")
+                            st.success("✅ Transaksi berhasil disimpan! Data tersusun rapi di Google Sheets.")
                             st.balloons()
                         except Exception as e:
                             st.error(f"Gagal menyimpan ke Google Sheets: {e}")
                     else:
                         st.error("⚠️ Kredensial Service Account belum terpasang.")
+
+        # ------------------------------------------
+        # MODE 2: RESTOK / TAMBAH STOK
+        # ------------------------------------------
+        else:
+            st.info(f"📦 **Stok Saat Ini:** {stok_sekarang} Pcs")
+            
+            jumlah_masuk = st.number_input("Jumlah Barang Masuk / Restok (Pcs):", min_value=1, value=10)
+            stok_total_baru = stok_sekarang + jumlah_masuk
+            
+            st.write(f"### 📊 Stok Setelah Restok: **{stok_total_baru} Pcs**")
+            
+            if st.button("➕ Update Restok Barang", type="primary"):
+                client = get_gspread_client()
+                if client:
+                    try:
+                        sh = client.open_by_key(SHEET_ID)
+                        ws_stok = sh.worksheet("Stok_Barang")
+                        
+                        row_number = idx_produk + 2
+                        ws_stok.update_cell(row_number, 8, stok_total_baru)
+                        
+                        st.cache_data.clear()
+                        st.success(f"✅ Restok berhasil! Stok **{produk_dipilih}** bertambah jadi {stok_total_baru} Pcs.")
+                        st.balloons()
+                    except Exception as e:
+                        st.error(f"Gagal mengupdate stok ke Google Sheets: {e}")
+                else:
+                    st.error("⚠️ Kredensial Service Account belum terpasang.")
 
         # ------------------------------------------
         # MODE 2: RESTOK / TAMBAH STOK
