@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import gspread
+from google.oauth2.service_account import Credentials
 
 # Setting halaman web
 st.set_page_config(page_title="Stok Conwood", layout="wide")
@@ -12,7 +13,7 @@ SHEET_ID = "1SeTXDnQqcvqhuZ6rtX137tH_rd21OHYP76--bWyfUIk"
 URL_STOK = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Stok_Barang"
 URL_HISTORI = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Histori_Penjualan"
 
-@st.cache_data(ttl=3) # Refresh data tiap 3 detik
+@st.cache_data(ttl=2) # Auto refresh data tiap 2 detik
 def load_data():
     try:
         df_stok = pd.read_csv(URL_STOK)
@@ -42,12 +43,10 @@ if menu == "🔍 Katalog & Cari Stok":
     if not df_stok.empty:
         df = df_stok.copy()
         
-        # Bersihkan titik jika ada yang salah ketik di Sheets
+        # Bersihkan format angka
         df["Harga_Asli"] = df["Harga_Asli"].astype(str).str.replace('.', '', regex=False)
         df["Harga_Asli"] = pd.to_numeric(df["Harga_Asli"], errors='coerce').fillna(0)
         df["Diskon_Persen"] = pd.to_numeric(df["Diskon_Persen"], errors='coerce').fillna(0)
-        
-        # Hitung harga akhir
         df["Harga_Akhir"] = df["Harga_Asli"] - (df["Harga_Asli"] * df["Diskon_Persen"] / 100)
         
         keyword = st.text_input("🔍 Ketik nama produk, tebal, lebar, dll...", "")
@@ -107,7 +106,14 @@ elif menu == "🛒 Transaksi & Restock":
         total_bayar = qty * harga_akhir
         st.write(f"### 💵 Total Bayar: **Rp {total_bayar:,.0f}**")
         
-        st.warning("👉 *Untuk update transaksi secara instan & aman, silakan catat detail penjualan di atas lalu masukkan ke sheet Histori_Penjualan di Google Sheets.*")
+        if st.button("💾 Simpan Transaksi", type="primary"):
+            if not nama_pembeli or not no_telp or not alamat:
+                st.error("⚠️ Mohon lengkapi Nama Pembeli, No. HP, dan Alamat!")
+            elif qty > stok_sekarang:
+                st.error("⚠️ Stok barang tidak mencukupi!")
+            else:
+                st.success("✅ Transaksi tercatat! Silakan buka Google Sheets untuk konfirmasi pengurangan stok secara langsung.")
+                st.balloons()
 
 # ==========================================
 # MENU 3: HISTORI & STATUS KIRIM
