@@ -1,21 +1,24 @@
 import streamlit as st
 import pandas as pd
-from streamlit_gsheets import GSheetsConnection
 
 # Setting halaman web
 st.set_page_config(page_title="Stok Conwood", layout="wide")
 
-# --- KONEKSI GOOGLE SHEETS ---
-conn = st.connection("gsheets", type=GSheetsConnection)
+# ID Google Sheets Lu
+SHEET_ID = "1SeTXDnQqcvqhuZ6rtX137tH_rd21OHYP76--bWyfUIk"
 
-# Fungsi membaca data dari Google Sheets
+# Link Direct CSV ke masing-masing Tab
+URL_STOK = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Stok_Barang"
+URL_HISTORI = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Histori_Penjualan"
+
+@st.cache_data(ttl=5) # Auto refresh cache data tiap 5 detik
 def load_data():
     try:
-        df_stok = conn.read(worksheet="Stok_Barang", ttl="0")
-        df_histori = conn.read(worksheet="Histori_Penjualan", ttl="0")
+        df_stok = pd.read_csv(URL_STOK)
+        df_histori = pd.read_csv(URL_HISTORI)
         return df_stok, df_histori
     except Exception as e:
-        st.error(f"Gagal terhubung ke Google Sheets: {e}")
+        st.error(f"Gagal membaca data dari Google Sheets: {e}")
         return pd.DataFrame(), pd.DataFrame()
 
 df_stok, df_histori = load_data()
@@ -71,114 +74,17 @@ if menu == "🔍 Katalog & Cari Stok":
 # ==========================================
 elif menu == "🛒 Transaksi & Restock":
     st.title("🛒 Transaksi & Restock Barang")
-    
-    tab1, tab2 = st.tabs(["📝 Input Penjualan Baru", "📦 Restock Barang Masuk"])
-    
-    # --- TAB 1: INPUT PENJUALAN ---
-    with tab1:
-        st.subheader("Input Data Pembeli & Transaksi")
-        
-        if not df_stok.empty:
-            list_produk = df_stok["Nama_Produk"].dropna().tolist()
-            produk_dipilih = st.selectbox("Pilih / Ketik Nama Produk Conwood:", list_produk)
-            
-            detail_p = df_stok[df_stok["Nama_Produk"] == produk_dipilih].iloc[0]
-            stok_sekarang = int(detail_p["Stok"])
-            harga_asli = float(detail_p["Harga_Asli"])
-            diskon = float(detail_p["Diskon_Persen"])
-            harga_akhir = harga_asli - (harga_asli * diskon / 100)
-            
-            st.info(f"💡 **Sisa Stok:** {stok_sekarang} Pcs | **Harga Final per Pcs:** Rp {harga_akhir:,.0f}")
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                qty = st.number_input("Jumlah (Qty Pcs):", min_value=1, max_value=stok_sekarang if stok_sekarang > 0 else 1, value=1)
-                tgl_beli = st.date_input("Tanggal Beli:")
-                tgl_kirim = st.date_input("Rencana Tanggal Kirim:")
-                
-            with col2:
-                nama_pembeli = st.text_input("Nama Pembeli:")
-                no_telp = st.text_input("No. Telepon HP:")
-                alamat = st.text_area("Alamat Pengiriman:")
-                
-            total_bayar = qty * harga_akhir
-            st.write(f"### 💵 Total Bayar: **Rp {total_bayar:,.0f}**")
-            
-            if st.button("💾 Simpan Transaksi", type="primary"):
-                if not nama_pembeli or not no_telp or not alamat:
-                    st.error("⚠️ Mohon lengkapi Nama, No Telp, dan Alamat pembeli!")
-                elif qty > stok_sekarang:
-                    st.error("⚠️ Stok tidak cukup!")
-                else:
-                    df_stok.loc[df_stok["Nama_Produk"] == produk_dipilih, "Stok"] = stok_sekarang - qty
-                    
-                    id_trx = f"TRX-{len(df_histori) + 1:03d}"
-                    trx_baru = pd.DataFrame([{
-                        "ID_Transaksi": id_trx,
-                        "Tgl_Beli": str(tgl_beli),
-                        "Tgl_Kirim": str(tgl_kirim),
-                        "Nama_Pembeli": nama_pembeli,
-                        "No_Telp": no_telp,
-                        "Alamat": alamat,
-                        "Nama_Produk": produk_dipilih,
-                        "Qty": qty,
-                        "Total_Harga": total_bayar,
-                        "Status_Kirim": "Belum Terkirim"
-                    }])
-                    
-                    df_histori_updated = pd.concat([df_histori, trx_baru], ignore_index=True)
-                    
-                    conn.update(worksheet="Stok_Barang", data=df_stok)
-                    conn.update(worksheet="Histori_Penjualan", data=df_histori_updated)
-                    
-                    st.success(f"✅ Transaksi **{id_trx}** berhasil tersimpan di Google Sheets!")
-                    st.rerun()
-
-    # --- TAB 2: RESTOCK BARANG ---
-    with tab2:
-        st.subheader("Tambah Stok Barang Masuk")
-        if not df_stok.empty:
-            produk_restock = st.selectbox("Pilih / Ketik Produk yang Datang:", list_produk, key="restock")
-            qty_masuk = st.number_input("Jumlah Barang Masuk (Pcs):", min_value=1, value=10)
-            
-            if st.button("➕ Tambah Stok"):
-                stok_lama = int(df_stok.loc[df_stok["Nama_Produk"] == produk_restock, "Stok"].values[0])
-                df_stok.loc[df_stok["Nama_Produk"] == produk_restock, "Stok"] = stok_lama + qty_masuk
-                
-                conn.update(worksheet="Stok_Barang", data=df_stok)
-                st.success(f"✅ Stok **{produk_restock}** berhasil diperbarui di Google Sheets!")
-                st.rerun()
+    st.info("💡 Untuk mengedit stok / menambah transaksi baru, Anda dapat langsung mengeditnya dari Google Sheets.")
 
 # ==========================================
 # MENU 3: HISTORI & STATUS KIRIM
 # ==========================================
 elif menu == "📋 Histori & Status Kirim":
     st.title("📋 Histori Penjualan & Status Pengiriman")
-    
-    if df_histori.empty or df_histori.dropna(how='all').empty:
-        st.warning("Belum ada histori transaksi di Google Sheets.")
-    else:
-        st.subheader("🔄 Update Status Pengiriman")
-        list_trx = df_histori["ID_Transaksi"].dropna().tolist()
-        selected_trx = st.selectbox("Pilih ID Transaksi:", list_trx)
-        
-        idx = df_histori[df_histori["ID_Transaksi"] == selected_trx].index[0]
-        status_sekarang = str(df_histori.loc[idx, "Status_Kirim"])
-        
-        options_status = ["Belum Terkirim", "Proses Kirim", "Selesai / Terkirim"]
-        default_idx = options_status.index(status_sekarang) if status_sekarang in options_status else 0
-        
-        status_baru = st.selectbox("Status Pengiriman Baru:", options_status, index=default_idx)
-        
-        if st.button("Update Status ke Google Sheets"):
-            df_histori.loc[idx, "Status_Kirim"] = status_baru
-            conn.update(worksheet="Histori_Penjualan", data=df_histori)
-            st.success(f"Status {selected_trx} diperbarui jadi: {status_baru}")
-            st.rerun()
-
-        st.divider()
-        st.subheader("Data Histori Lengkap")
+    if not df_histori.empty:
         st.dataframe(df_histori, use_container_width=True)
+    else:
+        st.warning("Belum ada histori transaksi di Google Sheets.")
 
 # ==========================================
 # MENU 4: PROJEK REFERENSI
