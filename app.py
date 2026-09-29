@@ -14,26 +14,24 @@ SHEET_ID = "1SeTXDnQqcvqhuZ6rtX137tH_rd21OHYP76--bWyfUIk"
 URL_STOK = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Stok_Barang"
 URL_HISTORI = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Histori_Penjualan"
 
-# Fungsi Koneksi Write gspread via Secrets (Fix Format Private Key)
+# Fungsi Koneksi Write gspread via Secrets
 def get_gspread_client():
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive"
     ]
     if "gcp_service_account" in st.secrets:
-        # Konversi st.secrets ke dictionary biasa
-        creds_dict = dict(st.secrets["gcp_service_account"])
-        
-        # Perbaiki format private_key
-        if "private_key" in creds_dict:
-            key = creds_dict["private_key"]
-            # Hilangkan tanda petik ganda/tunggal ekstra jika ada di awal/akhir
-            key = key.strip("'\"")
-            # Pastikan newline terkonversi dengan benar
-            key = key.replace("\\n", "\n")
-            creds_dict["private_key"] = key
-
         try:
+            # Jika di secrets dimasukkan sebagai raw JSON string / dict
+            raw_creds = st.secrets["gcp_service_account"]
+            
+            if isinstance(raw_creds, str):
+                creds_dict = json.loads(raw_creds, strict=False)
+            else:
+                creds_dict = dict(raw_creds)
+                if "private_key" in creds_dict:
+                    creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+
             creds = Credentials.from_service_account_info(
                 creds_dict, scopes=scopes
             )
