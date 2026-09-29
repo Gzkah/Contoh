@@ -21,9 +21,17 @@ def get_gspread_client():
         "https://www.googleapis.com/auth/drive"
     ]
     if "gcp_service_account" in st.secrets:
+        # Ambil dict dari secrets dan copy agar bisa diubah
+        creds_dict = dict(st.secrets["gcp_service_account"])
+        # Format ulang private_key agar \n terbaca dengan benar oleh Python
+        if "private_key" in creds_dict:
+            creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+        
         creds = Credentials.from_service_account_info(
-            st.secrets["gcp_service_account"], scopes=scopes
+            creds_dict, scopes=scopes
         )
+        return gspread.authorize(creds)
+    return None
         return gspread.authorize(creds)
     return None
 
