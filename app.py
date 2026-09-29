@@ -2,18 +2,32 @@ import streamlit as st
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
+import datetime
 
 # Setting halaman web
 st.set_page_config(page_title="Stok Conwood", layout="wide")
 
-# ID Google Sheets Lu
+# ID Google Sheets
 SHEET_ID = "1SeTXDnQqcvqhuZ6rtX137tH_rd21OHYP76--bWyfUIk"
 
-# Link Direct CSV
+# Link Direct CSV (Read-Only)
 URL_STOK = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Stok_Barang"
 URL_HISTORI = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Histori_Penjualan"
 
-@st.cache_data(ttl=2) # Auto refresh data tiap 2 detik
+# Fungsi Koneksi Write gspread via Secrets
+def get_gspread_client():
+    scopes = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive"
+    ]
+    if "gcp_service_account" in st.secrets:
+        creds = Credentials.from_service_account_info(
+            st.secrets["gcp_service_account"], scopes=scopes
+        )
+        return gspread.authorize(creds)
+    return None
+
+@st.cache_data(ttl=2)
 def load_data():
     try:
         df_stok = pd.read_csv(URL_STOK)
@@ -43,7 +57,6 @@ if menu == "🔍 Katalog & Cari Stok":
     if not df_stok.empty:
         df = df_stok.copy()
         
-        # Bersihkan format angka
         df["Harga_Asli"] = df["Harga_Asli"].astype(str).str.replace('.', '', regex=False)
         df["Harga_Asli"] = pd.to_numeric(df["Harga_Asli"], errors='coerce').fillna(0)
         df["Diskon_Persen"] = pd.to_numeric(df["Diskon_Persen"], errors='coerce').fillna(0)
@@ -82,7 +95,8 @@ elif menu == "🛒 Transaksi & Restock":
         list_produk = df_stok["Nama_Produk"].dropna().tolist()
         produk_dipilih = st.selectbox("Pilih / Ketik Nama Produk Conwood:", list_produk)
         
-        detail_p = df_stok[df_stok["Nama_Produk"] == produk_dipilih].iloc[0]
+        idx_produk = df_stok[df_stok["Nama_Produk"] == produk_dipilih].index[0]
+        detail_p = df_stok.loc[idx_produk]
         stok_sekarang = int(detail_p["Stok"])
         
         harga_asli_str = str(detail_p["Harga_Asli"]).replace('.', '')
@@ -95,8 +109,8 @@ elif menu == "🛒 Transaksi & Restock":
         col1, col2 = st.columns(2)
         with col1:
             qty = st.number_input("Jumlah (Qty Pcs):", min_value=1, max_value=stok_sekarang if stok_sekarang > 0 else 1, value=1)
-            tgl_beli = st.date_input("Tanggal Beli:")
-            tgl_kirim = st.date_input("Rencana Tanggal Kirim:")
+            tgl_beli = st.date_input("Tanggal Beli:", datetime.date.today())
+            tgl_kirim = st.date_input("Rencana Tanggal Kirim:", datetime.date.today())
             
         with col2:
             nama_pembeli = st.text_input("Nama Pembeli:")
@@ -112,8 +126,44 @@ elif menu == "🛒 Transaksi & Restock":
             elif qty > stok_sekarang:
                 st.error("⚠️ Stok barang tidak mencukupi!")
             else:
-                st.success("✅ Transaksi tercatat! Silakan buka Google Sheets untuk konfirmasi pengurangan stok secara langsung.")
-                st.balloons()
+                client = get_gspread_client()
+                if client:
+                    try:
+                        sh = client.open_by_key(SHEET_ID)
+                        ws_stok = sh.worksheet("Stok_Barang")
+                        ws_histori = sh.worksheet("Histori_Penjualan")
+                        
+                        # 1. Tambah baris ke Histori_Penjualan
+                        stgl_beli = tgl_beli.strftime("%Y-%m-%d")
+                        stgl_kirim = tgl_kirim.strftime("%Y-%m-%d")
+                        
+                        new_row = [
+                            stgl_beli,
+                            produk_dipilih,
+                            qty,
+                            harga_akhir,
+                            total_bayar,
+                            nama_pembeli,
+                            no_telp,
+                            alamat,
+                            stgl_kirim,
+                            "Pending"
+                        ]
+                        ws_histori.append_row(new_row)
+                        
+                        # 2. Kurangi stok di Stok_Barang
+                        # Baris di gspread mulai dari index 1, header ada di baris 1, jadi + 2
+                        row_number = idx_produk + 2
+                        sisa_stok_baru = stok_sekarang - qty
+                        ws_stok.update_cell(row_number, 8, sisa_stok_baru) # Kolom H = Stok
+                        
+                        st.cache_data.clear()
+                        st.success("✅ Transaksi berhasil disimpan! Stok terupdate & data masuk ke Histori.")
+                        st.balloons()
+                    except Exception as e:
+                        st.error(f"Gagal menyimpan ke Google Sheets: {e}")
+                else:
+                    st.error("⚠️ Secrets Google Service Account belum terpasang di Dashboard Streamlit Community Cloud.")
 
 # ==========================================
 # MENU 3: HISTORI & STATUS KIRIM
