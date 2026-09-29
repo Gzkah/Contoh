@@ -22,16 +22,10 @@ def get_gspread_client():
     ]
     if "gcp_service_account" in st.secrets:
         try:
-            # Jika di secrets dimasukkan sebagai raw JSON string / dict
-            raw_creds = st.secrets["gcp_service_account"]
+            creds_dict = dict(st.secrets["gcp_service_account"])
+            if "private_key" in creds_dict:
+                creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
             
-            if isinstance(raw_creds, str):
-                creds_dict = json.loads(raw_creds, strict=False)
-            else:
-                creds_dict = dict(raw_creds)
-                if "private_key" in creds_dict:
-                    creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
-
             creds = Credentials.from_service_account_info(
                 creds_dict, scopes=scopes
             )
