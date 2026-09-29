@@ -14,10 +14,10 @@ st.set_page_config(
     layout="wide"
 )
 
-# ID Google Sheets Anda
+# ID Google Sheets
 SHEET_ID = "1SeTXDnQqcvqhuZ6rtX137tH_rd21OHYP76--bWyfUIk"
 
-# Scope untuk Google Sheets API
+# Scope Google Sheets API
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive"
@@ -87,12 +87,28 @@ if menu == "📊 Dashboard & Stok":
         st.divider()
         st.subheader("📋 Daftar Stok Produk")
         
+        # OLAH DATA HARGA BISA DIKALI 1000 & HITUNG DISKON
+        df_display = df_stok.copy()
+        
+        if "Harga_Asli" in df_display.columns:
+            # Konversi ke numerik lalu kali 1000 jika formatnya desimal ribuan (cth: 161.3 -> 161300)
+            df_display["Harga_Asli"] = pd.to_numeric(df_display["Harga_Asli"], errors='coerce').fillna(0) * 1000
+            
+            # Hitung harga setelah diskon jika ada kolom Diskon_Persen
+            if "Diskon_Persen" in df_display.columns:
+                df_display["Diskon_Persen"] = pd.to_numeric(df_display["Diskon_Persen"], errors='coerce').fillna(0)
+                df_display["Harga_Setelah_Diskon"] = df_display["Harga_Asli"] - (df_display["Harga_Asli"] * df_display["Diskon_Persen"] / 100)
+                
+                # Format Tampilan Angka Rupiah
+                df_display["Harga_Asli_Rp"] = df_display["Harga_Asli"].apply(lambda x: f"Rp {x:,.0f}")
+                df_display["Harga_Setelah_Diskon_Rp"] = df_display["Harga_Setelah_Diskon"].apply(lambda x: f"Rp {x:,.0f}")
+
         # Search Box
         search = st.text_input("🔍 Cari Produk Conwood:", "")
         if search:
-            df_filtered = df_stok[df_stok["Nama_Produk"].str.contains(search, case=False, na=False)]
+            df_filtered = df_display[df_display["Nama_Produk"].str.contains(search, case=False, na=False)]
         else:
-            df_filtered = df_stok
+            df_filtered = df_display
             
         st.dataframe(df_filtered, use_container_width=True)
     else:
@@ -105,7 +121,6 @@ elif menu == "🛒 Transaksi & Restock":
     st.title("🛒 Transaksi & Restock Barang")
     
     if not df_stok.empty:
-        # Pilihan Mode (Jual vs Restok)
         mode = st.radio("Pilih Jenis Aksi:", ["🛒 Transaksi Penjualan", "📦 Restok / Tambah Stok Baru"], horizontal=True)
         st.divider()
         
@@ -120,10 +135,9 @@ elif menu == "🛒 Transaksi & Restock":
         # MODE 1: TRANSAKSI PENJUALAN
         # ------------------------------------------
         if mode == "🛒 Transaksi Penjualan":
-            harga_asli_str = str(detail_p["Harga_Asli"]).replace('.', '')
-            harga_asli = float(harga_asli_str)
+            harga_asli_val = float(detail_p["Harga_Asli"]) * 1000
             diskon = float(detail_p["Diskon_Persen"])
-            harga_akhir = harga_asli - (harga_asli * diskon / 100)
+            harga_akhir = harga_asli_val - (harga_asli_val * diskon / 100)
             
             st.info(f"💡 **Sisa Stok:** {stok_sekarang} Pcs | **Harga Final per Pcs:** Rp {harga_akhir:,.0f}")
             
@@ -156,32 +170,22 @@ elif menu == "🛒 Transaksi & Restock":
                             
                             stgl_beli = tgl_beli.strftime("%Y-%m-%d")
                             stgl_kirim = tgl_kirim.strftime("%Y-%m-%d")
-                            
                             trx_id = f"TRX-{tgl_beli.strftime('%Y%m%d')}-{random.randint(1000, 9999)}"
                             
-                            # SUSUNAN BERDASARKAN HEADER GOOGLE SHEETS ANDA:
                             new_row = [
-                                trx_id,          # 1. ID_Transaksi
-                                stgl_beli,       # 2. Tgl_Beli
-                                stgl_kirim,      # 3. Tgl_Kirim
-                                nama_pembeli,    # 4. Nama_Pembeli
-                                no_telp,         # 5. No_Telp
-                                alamat,          # 6. Alamat
-                                produk_dipilih,  # 7. Nama_Produk
-                                qty,             # 8. Qty
-                                total_bayar,     # 9. Total_Harga
-                                "Pending"        # 10. Status_Kirim
+                                trx_id, stgl_beli, stgl_kirim, nama_pembeli,
+                                no_telp, alamat, produk_dipilih, qty,
+                                total_bayar, "Pending"
                             ]
                             
                             ws_histori.append_row(new_row)
                             
-                            # Update Stok di Google Sheets (Kolom H = Stok)
                             row_number = idx_produk + 2
                             sisa_stok_baru = stok_sekarang - qty
                             ws_stok.update_cell(row_number, 8, sisa_stok_baru)
                             
                             st.cache_data.clear()
-                            st.success("✅ Transaksi berhasil disimpan! Data tersusun rapi di Google Sheets.")
+                            st.success("✅ Transaksi berhasil disimpan!")
                             st.balloons()
                         except Exception as e:
                             st.error(f"Gagal menyimpan ke Google Sheets: {e}")
@@ -189,11 +193,10 @@ elif menu == "🛒 Transaksi & Restock":
                         st.error("⚠️ Kredensial Service Account belum terpasang.")
 
         # ------------------------------------------
-        # MODE 2: RESTOK / TAMBAH STOK
+        # MODE 2: RESTOK
         # ------------------------------------------
         else:
             st.info(f"📦 **Stok Saat Ini:** {stok_sekarang} Pcs")
-            
             jumlah_masuk = st.number_input("Jumlah Barang Masuk / Restok (Pcs):", min_value=1, value=10)
             stok_total_baru = stok_sekarang + jumlah_masuk
             
@@ -205,26 +208,20 @@ elif menu == "🛒 Transaksi & Restock":
                     try:
                         sh = client.open_by_key(SHEET_ID)
                         ws_stok = sh.worksheet("Stok_Barang")
-                        
                         row_number = idx_produk + 2
                         ws_stok.update_cell(row_number, 8, stok_total_baru)
                         
                         st.cache_data.clear()
-                        st.success(f"✅ Restok berhasil! Stok **{produk_dipilih}** bertambah jadi {stok_total_baru} Pcs.")
+                        st.success(f"✅ Restok berhasil! Stok bertambah jadi {stok_total_baru} Pcs.")
                         st.balloons()
                     except Exception as e:
                         st.error(f"Gagal mengupdate stok ke Google Sheets: {e}")
-                else:
-                    st.error("⚠️ Kredensial Service Account belum terpasang.")
-    else:
-        st.warning("⚠️ Data stok tidak tersedia.")
 
 # ==========================================
 # MENU 3: HISTORI PENJUALAN
 # ==========================================
 elif menu == "📜 Histori Penjualan":
     st.title("📜 Histori Transaksi Penjualan")
-    
     if not df_histori.empty:
         st.dataframe(df_histori, use_container_width=True)
     else:
